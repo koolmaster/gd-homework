@@ -1,94 +1,62 @@
 import React, { useState } from "react";
-import { mapValues, groupBy, sortBy } from "lodash";
+import { useTranslation } from 'react-i18next';
 import Page from "../components/Page";
 import { DateFilter, defaultDateFilterOptions, DateFilterHelpers } from "@gooddata/sdk-ui-filters";
-import { modifyMeasure, modifyAttribute } from "@gooddata/sdk-model";
-import { LineChart } from "@gooddata/sdk-ui-charts";
-
-import { useExecution, useDataView, useExecutionDataView } from "@gooddata/sdk-ui";
+import { modifyAttribute } from "@gooddata/sdk-model";
+import ContentChart from "../components/ContentChart";
+import SideBar from "../components/SideBar";
 
 import * as Md from "../md/full";
 
 import styles from "./Home.module.scss";
 
 const Home = () => {
+    defaultDateFilterOptions.absoluteForm = {
+        localIdentifier: "ABSOLUTE_FORM",
+        type: "absoluteForm",
+        from: "2016-01-01",
+        to: "2020-12-31",
+        name: "Select year",
+        visible: true,
+    };
+    const { i18n } = useTranslation();
     const [state, setState] = useState({
         selectedFilterOption: defaultDateFilterOptions.allTime,
-        titleDate: "",
+        titleDate: "All Time",
+        isYear: false,
         excludeCurrentPeriod: false,
     });
-    const [sideBar, setSideBar] = useState({});
-    const [sort, setSort] = useState("MAX");
-    const [isLoading, setIsLoading] = useState(true);
-    const revenueClothing = modifyMeasure(Md.RevenueClothing, (m) =>
-        m.format("#,##0").title("Revenue Clothing"),
-    );
-    const revenueElectronic = modifyMeasure(Md.RevenueElectronic, (m) =>
-        m.format("#,##0").title("Revenue Electronic"),
-    );
-    const revenueHome = modifyMeasure(Md.RevenueHome, (m) => m.format("#,##0").title("Revenue Home"));
-    const revenueOutdoor = modifyMeasure(Md.RevenueOutdoor, (m) =>
-        m.format("#,##0").title("Revenue Outdoor"),
-    );
-    const measures = [revenueClothing, revenueElectronic, revenueHome, revenueOutdoor];
+    const [noData, setNoData] = useState(false);
     const monthDate = modifyAttribute(Md.DateDatasets.Date.Month.Short, (a) => a.alias("Month"));
-
-    const dateFilter = DateFilterHelpers.mapOptionToAfm(
-        state.selectedFilterOption,
-        Md.DateDatasets.Date.ref,
-        state.excludeCurrentPeriod,
-    );
-
-    const configEx = {
-        seriesBy: [Md.Revenue],
-        slicesBy: [Md.ProductCategory, monthDate],
-    };
-    const onLoading = () => {
-        setIsLoading(true);
-    };
-    const onSuccess = (data) => {
-        const result = data
-            .data()
-            .series()
-            .firstForMeasure(Md.Revenue)
-            .dataPoints()
-            .map((dataPoint) => {
-                const temp = {
-                    name: dataPoint.sliceDesc.headers[0].attributeHeaderItem.name,
-                    value: dataPoint.formattedValue(),
-                };
-                return temp;
-            });
-        const sortResult = mapValues(groupBy(result, "name"), (v) =>
-            sortBy(v, [
-                function (o) {
-                    return Number(o.value.replace(/(^\$|,)/g, ""));
-                },
-            ]),
-        );
-        setIsLoading(false);
-        setSideBar(sortResult);
-    };
-    useDataView(
-        {
-            execution: useExecution(configEx),
-            onLoading: onLoading,
-            onSuccess: onSuccess,
-        },
-        [],
-    );
 
     const onApply = (selectedFilterOption, excludeCurrentPeriod) => {
         setState({
             selectedFilterOption,
             titleDate: DateFilterHelpers.getDateFilterTitle(selectedFilterOption, "en-US", "dd/MM/yyyy"),
+            isYear: selectedFilterOption.localIdentifier === "ABSOLUTE_FORM",
             excludeCurrentPeriod,
         });
     };
 
+    const checkData = async (getExportedData) => {
+        try {
+            const result = await getExportedData({
+                format: "xlsx",
+                includeFilterContext: true,
+                mergeHeaders: true,
+                title: "CustomTitle",
+            });
+            if (result.uri) {
+                setNoData(false);
+            }
+        } catch (error) {
+            setNoData(true);
+        }
+    };
+
     return (
-        <Page>
-            <h2>My Dashboard {state.titleDate}</h2>
+        <Page mainClassName="s-home">
+            <h2>{i18n.t('my.dashboard')} - {state.titleDate}</h2>
             <div className={styles.filterBar}>
                 <DateFilter
                     excludeCurrentPeriod={state.excludeCurrentPeriod}
@@ -101,39 +69,21 @@ const Home = () => {
                 />
             </div>
             <div className={styles.wrapperChart}>
-                <div className={styles.contentChart}>
-                    <LineChart
-                        measures={measures}
-                        trendBy={Md.DateMonth.Short}
-                        filters={dateFilter ? [dateFilter] : []}
-                    />
-                </div>
-                <div className={styles.sideBar}>
-                    {isLoading && <div>loading....</div>}
-                    {!isLoading && (
-                        <>
-                            <ul className={styles.listTotal}>
-                                {Object.keys(sideBar)?.map((data, idx) => {
-                                    const root =
-                                        sort === "MAX"
-                                            ? sideBar[data][sideBar[data].length - 1]
-                                            : sideBar[data][0];
-                                    return (
-                                        <li key={idx}>
-                                            <p>{root.name}</p>
-                                            <p>{root.value}</p>
-                                        </li>
-                                    );
-                                })}
-                            </ul>
-                            <select onChange={(e) => setSort(e.target.value)}>
-                                <option value="">Calculation Selector</option>
-                                <option value="MAX">Maximum Revenue across different products</option>
-                                <option value="MIN">Minimum Revenue across different products</option>
-                            </select>
-                        </>
-                    )}
-                </div>
+                <ContentChart
+                    selectedFilter={state.selectedFilterOption}
+                    excludeCurrentPeriod={state.excludeCurrentPeriod}
+                    checkData={checkData}
+                    dateDataSet={Md.DateDatasets.Date.ref}
+                    productCategory={Md.ProductCategory}
+                    revenue={Md.Revenue}
+                    trend={state.isYear ? Md.DateMonthYear.Short : Md.DateMonth.Short}
+                />
+                <SideBar
+                    noData={noData}
+                    monthDate={monthDate}
+                    revenue={Md.Revenue}
+                    productCategory={Md.ProductCategory}
+                />
             </div>
         </Page>
     );

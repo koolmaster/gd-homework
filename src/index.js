@@ -5,6 +5,8 @@ import ReactDOM from "react-dom";
 import App from "./App";
 import * as serviceWorker from "./serviceWorker";
 import { AppProviders } from "./contexts";
+import { I18nextProvider } from 'react-i18next';
+import i18n from './i18n';
 
 import "./index.scss";
 import "@gooddata/sdk-ui-charts/styles/css/main.css";
@@ -17,7 +19,9 @@ import "@gooddata/sdk-ui-dashboard/styles/css/main.css";
 
 ReactDOM.render(
     <AppProviders>
-        <App />
+        <I18nextProvider i18n={i18n}>
+            <App />
+        </I18nextProvider>
     </AppProviders>,
     document.getElementById("root"),
 );
